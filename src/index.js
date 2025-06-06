@@ -192,6 +192,53 @@ app.get('/api/pastes', async (req, res) => {
   }
 });
 
+// Preview paste by ID (without decrypting)
+app.get('/api/preview/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Get the paste first
+    const [paste] = await sql`
+      SELECT
+        id,
+        CASE
+          WHEN is_encrypted THEN '[Encrypted Content]'
+          ELSE SUBSTRING(content, 1, 100) || CASE WHEN LENGTH(content) > 100 THEN '...' ELSE '' END
+        END as content,
+        language,
+        expires_at,
+        burn_after_read,
+        is_private,
+        is_encrypted,
+        views,
+        created_at
+      FROM pastes
+      WHERE id = ${id}
+        AND (expires_at IS NULL OR expires_at > NOW())
+        AND NOT deleted
+    `;
+
+    if (!paste) {
+      return res.status(404).json({ error: 'Paste not found' });
+    }
+
+    // Format the response
+    const preview = {
+      ...paste,
+      isPrivate: paste.is_private,
+      isEncrypted: paste.is_encrypted,
+      burnAfterRead: paste.burn_after_read,
+      createdAt: paste.created_at,
+      expiresAt: paste.expires_at
+    };
+
+    res.json(preview);
+  } catch (error) {
+    console.error('Error fetching paste preview:', error);
+    res.status(500).json({ error: 'Failed to fetch paste preview' });
+  }
+});
+
 // Delete paste by ID
 app.delete('/api/pastes/:id', async (req, res) => {
   try {
