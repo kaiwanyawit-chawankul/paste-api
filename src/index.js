@@ -20,9 +20,10 @@ const decryptContent = (encryptedContent, password) => {
   return bytes.toString(CryptoJS.enc.Utf8);
 };
 
-// Initialize database schema
+// Initialize database schema and run migrations
 async function initializeSchema() {
   try {
+    // Create initial table
     await sql`
       CREATE TABLE IF NOT EXISTS pastes (
         id TEXT PRIMARY KEY,
@@ -31,15 +32,21 @@ async function initializeSchema() {
         expires_at TIMESTAMP,
         burn_after_read BOOLEAN DEFAULT false,
         is_private BOOLEAN DEFAULT false,
-        is_encrypted BOOLEAN DEFAULT false,
         views INTEGER DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         deleted BOOLEAN DEFAULT false
       );
     `;
-    console.log('Schema initialized successfully');
+
+    // Add is_encrypted column
+    await sql`
+      ALTER TABLE pastes
+      ADD COLUMN IF NOT EXISTS is_encrypted BOOLEAN DEFAULT false;
+    `;
+
+    console.log('Schema and migrations completed successfully');
   } catch (error) {
-    console.error('Error initializing schema:', error);
+    console.error('Error in database setup:', error);
     process.exit(1);
   }
 }
