@@ -4,10 +4,21 @@ import { neon } from '@neondatabase/serverless';
 import { randomBytes } from 'crypto';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
+import CryptoJS from 'crypto-js';
 
 dotenv.config();
 
 const sql = neon(process.env.DATABASE_URL);
+
+// Encryption helper functions
+const encryptContent = (content, password) => {
+  return CryptoJS.AES.encrypt(content, password).toString();
+};
+
+const decryptContent = (encryptedContent, password) => {
+  const bytes = CryptoJS.AES.decrypt(encryptedContent, password);
+  return bytes.toString(CryptoJS.enc.Utf8);
+};
 
 // Initialize database schema
 async function initializeSchema() {
@@ -20,6 +31,7 @@ async function initializeSchema() {
         expires_at TIMESTAMP,
         burn_after_read BOOLEAN DEFAULT false,
         is_private BOOLEAN DEFAULT false,
+        is_encrypted BOOLEAN DEFAULT false,
         views INTEGER DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         deleted BOOLEAN DEFAULT false
@@ -53,16 +65,20 @@ app.get('/healthz', (req, res) => {
 // Create paste
 app.post('/api/pastes', async (req, res) => {
   try {
-    const { content, expiresIn, language, burnAfterRead, isPrivate } = req.body;
+    const { content, expiresIn, language, burnAfterRead, isPrivate, password } = req.body;
     const id = randomBytes(4).toString('hex');
     const expirationDate = expiresIn ? new Date(Date.now() + expiresIn) : null;
 
+    // Encrypt content if password is provided
+    const isEncrypted = !!password;
+    const finalContent = isEncrypted ? encryptContent(content, password) : content;
+
     await sql`
       INSERT INTO pastes (
-        id, content, language, expires_at, burn_after_read, is_private, views
+        id, content, language, expires_at, burn_after_read, is_private, is_encrypted, views
       )
       VALUES (
-        ${id}, ${content}, ${language}, ${expirationDate}, ${burnAfterRead}, ${isPrivate}, 0
+        ${id}, ${finalContent}, ${language}, ${expirationDate}, ${burnAfterRead}, ${isPrivate}, ${isEncrypted}, 0
       )
     `;
 
@@ -77,6 +93,7 @@ app.post('/api/pastes', async (req, res) => {
 app.get('/api/pastes/:id', async (req, res) => {
   try {
     const { id } = req.params;
+    const { password } = req.query;
 
     // Get the paste first
     const [paste] = await sql`
@@ -88,6 +105,20 @@ app.get('/api/pastes/:id', async (req, res) => {
 
     if (!paste) {
       return res.status(404).json({ error: 'Paste not found' });
+    }
+
+    // Check if paste is encrypted and password is required
+    if (paste.is_encrypted && !password) {
+      return res.status(401).json({ error: 'Password required for encrypted paste' });
+    }
+
+    // Try to decrypt if the paste is encrypted
+    if (paste.is_encrypted) {
+      try {
+        paste.content = decryptContent(paste.content, password);
+      } catch (error) {
+        return res.status(401).json({ error: 'Invalid password' });
+      }
     }
 
     // Increment views
@@ -136,8 +167,9 @@ app.get('/api/pastes', async (req, res) => {
     // Filter out private pastes content
     const safePastes = pastes.map(paste => ({
       ...paste,
-      content: paste.content + (paste.content.length > 100 ? '...' : ''),
+      content: paste.is_encrypted ? '[Encrypted]' : paste.content + (paste.content.length > 100 ? '...' : ''),
       isPrivate: paste.is_private,
+      isEncrypted: paste.is_encrypted,
       burnAfterRead: paste.burn_after_read,
       createdAt: paste.created_at,
       expiresAt: paste.expires_at
