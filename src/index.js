@@ -160,7 +160,10 @@ app.get('/api/pastes', async (req, res) => {
     const pastes = await sql`
       SELECT
         id,
-        SUBSTRING(content, 1, 100) as content,
+        CASE
+          WHEN is_encrypted THEN '[Encrypted Content]'
+          ELSE SUBSTRING(content, 1, 100) || CASE WHEN LENGTH(content) > 100 THEN '...' ELSE '' END
+        END as content,
         language,
         created_at,
         views,
