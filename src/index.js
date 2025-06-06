@@ -99,11 +99,11 @@ app.post('/api/pastes', async (req, res) => {
   }
 });
 
-// Get paste by ID
-app.get('/api/pastes/:id', async (req, res) => {
+// Get paste by ID (POST to handle password securely)
+app.post('/api/pastes/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { password } = req.query;
+    const { password } = req.body;
 
     // Get the paste first
     const [paste] = await sql`
