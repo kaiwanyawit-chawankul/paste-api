@@ -168,6 +168,7 @@ app.get('/api/pastes', async (req, res) => {
         created_at,
         views,
         is_private,
+        is_encrypted,
         burn_after_read,
         expires_at
       FROM pastes
